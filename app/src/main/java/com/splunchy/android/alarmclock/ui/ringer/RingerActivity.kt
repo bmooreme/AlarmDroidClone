@@ -1,7 +1,6 @@
 package com.splunchy.android.alarmclock.ui.ringer
 
 import android.app.KeyguardManager
-import android.content.Context
 import android.content.Intent
 import android.hardware.Sensor
 import android.hardware.SensorEvent

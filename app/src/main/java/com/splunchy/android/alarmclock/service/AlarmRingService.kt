@@ -20,15 +20,14 @@ import android.os.VibratorManager
 import android.speech.tts.TextToSpeech
 import androidx.core.app.NotificationCompat
 import com.splunchy.android.alarmclock.R
-import com.splunchy.android.alarmclock.data.Alarm
 import com.splunchy.android.alarmclock.data.AlarmDatabase
-import com.splunchy.android.alarmclock.data.ObstacleType
 import com.splunchy.android.alarmclock.ui.ringer.RingerActivity
 import com.splunchy.android.alarmclock.util.AlarmScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -37,6 +36,7 @@ class AlarmRingService : Service() {
     private var mediaPlayer: MediaPlayer? = null
     private var vibrator: Vibrator? = null
     private var tts: TextToSpeech? = null
+    private var ttsReady = false
     private val handler = Handler(Looper.getMainLooper())
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -83,11 +83,11 @@ class AlarmRingService : Service() {
         return START_STICKY
     }
 
-    private fun startRinging(alarm: Alarm) {
+    private fun startRinging(alarm: com.splunchy.android.alarmclock.data.Alarm) {
         if (alarm.usesInternetRadio) {
             startInternetRadio(alarm.internetRadioUrl!!)
         } else {
-            startLocalRingtone(alarm)
+            startLocalRingtone(alarm.ringtoneUri)
         }
 
         if (alarm.vibrate) {
@@ -99,24 +99,37 @@ class AlarmRingService : Service() {
         }
 
         if (alarm.speakingClock) {
-            handler.postDelayed({ speakTime() }, 2000)
+            initTtsAndSpeak()
         }
     }
 
-    private fun startLocalRingtone(alarm: Alarm) {
-        val ringtoneUri = if (alarm.ringtoneUri != null) {
-            Uri.parse(alarm.ringtoneUri)
+    private fun startLocalRingtone(ringtoneUri: String?) {
+        val uri = if (ringtoneUri != null) {
+            Uri.parse(ringtoneUri)
         } else {
             RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
                 ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
         }
 
-        mediaPlayer = MediaPlayer().apply {
-            setAudioAttributes(alarmAudioAttributes())
-            setDataSource(this@AlarmRingService, ringtoneUri)
-            isLooping = true
-            prepare()
-            start()
+        try {
+            mediaPlayer = MediaPlayer().apply {
+                setAudioAttributes(alarmAudioAttributes())
+                setDataSource(this@AlarmRingService, uri)
+                isLooping = true
+                prepare()
+                start()
+            }
+        } catch (_: Exception) {
+            val fallback = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+            if (fallback != null && ringtoneUri != null) {
+                mediaPlayer = MediaPlayer().apply {
+                    setAudioAttributes(alarmAudioAttributes())
+                    setDataSource(this@AlarmRingService, fallback)
+                    isLooping = true
+                    prepare()
+                    start()
+                }
+            }
         }
     }
 
@@ -127,11 +140,19 @@ class AlarmRingService : Service() {
             isLooping = false
             setOnPreparedListener { it.start() }
             setOnErrorListener { _, _, _ ->
-                startLocalRingtone(Alarm(hour = 0, minute = 0))
+                startLocalRingtone(null)
                 true
             }
             prepareAsync()
         }
+
+        handler.postDelayed({
+            if (mediaPlayer?.isPlaying != true) {
+                mediaPlayer?.release()
+                mediaPlayer = null
+                startLocalRingtone(null)
+            }
+        }, RADIO_TIMEOUT_MS)
     }
 
     private fun alarmAudioAttributes() = AudioAttributes.Builder()
@@ -139,22 +160,27 @@ class AlarmRingService : Service() {
         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
         .build()
 
-    private fun speakTime() {
+    private fun initTtsAndSpeak() {
         tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 tts?.language = Locale.getDefault()
-                val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
-                val dayFormat = SimpleDateFormat("EEEE", Locale.getDefault())
-                val now = Date()
-                val text = "It is ${timeFormat.format(now)}, ${dayFormat.format(now)}"
-                tts?.speak(text, TextToSpeech.QUEUE_ADD, null, "speaking_clock")
-
-                handler.postDelayed({ speakTime() }, 30000)
+                ttsReady = true
+                speakCurrentTime()
             }
         }
     }
 
-    private fun launchRingerActivity(alarm: Alarm) {
+    private fun speakCurrentTime() {
+        if (!ttsReady || tts == null) return
+        val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
+        val dayFormat = SimpleDateFormat("EEEE", Locale.getDefault())
+        val now = Date()
+        val text = "It is ${timeFormat.format(now)}, ${dayFormat.format(now)}"
+        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "speaking_clock")
+        handler.postDelayed({ speakCurrentTime() }, 30000)
+    }
+
+    private fun launchRingerActivity(alarm: com.splunchy.android.alarmclock.data.Alarm) {
         val intent = Intent(this, RingerActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             putExtra("alarm_id", alarm.id)
@@ -171,9 +197,11 @@ class AlarmRingService : Service() {
         CoroutineScope(Dispatchers.IO).launch {
             val alarm = AlarmDatabase.getInstance(this@AlarmRingService).alarmDao().getAlarmById(alarmId)
             if (alarm != null) {
+                val now = Calendar.getInstance()
+                now.add(Calendar.MINUTE, alarm.snoozeDurationMinutes)
                 val snoozeAlarm = alarm.copy(
-                    hour = (alarm.hour + (alarm.minute + alarm.snoozeDurationMinutes) / 60) % 24,
-                    minute = (alarm.minute + alarm.snoozeDurationMinutes) % 60
+                    hour = now.get(Calendar.HOUR_OF_DAY),
+                    minute = now.get(Calendar.MINUTE)
                 )
                 AlarmScheduler.schedule(this@AlarmRingService, snoozeAlarm)
             }
@@ -198,13 +226,16 @@ class AlarmRingService : Service() {
     }
 
     private fun stopRinging() {
-        mediaPlayer?.run {
-            if (isPlaying) stop()
-            release()
-        }
+        try {
+            mediaPlayer?.run {
+                if (isPlaying) stop()
+                release()
+            }
+        } catch (_: Exception) {}
         mediaPlayer = null
         vibrator?.cancel()
         vibrator = null
+        ttsReady = false
         tts?.stop()
         tts?.shutdown()
         tts = null
@@ -262,6 +293,7 @@ class AlarmRingService : Service() {
         const val NOTIFICATION_ID = 1001
         const val ACTION_SNOOZE = "com.splunchy.android.alarmclock.SNOOZE"
         const val ACTION_DISMISS = "com.splunchy.android.alarmclock.DISMISS"
+        const val RADIO_TIMEOUT_MS = 15000L
 
         fun createNotificationChannels(context: Context) {
             val manager = context.getSystemService(NotificationManager::class.java)
