@@ -25,4 +25,7 @@ interface AlarmDao {
 
     @Query("UPDATE alarms SET enabled = :enabled WHERE id = :id")
     suspend fun setEnabled(id: Long, enabled: Boolean)
+
+    @Query("UPDATE alarms SET skipNext = :skip WHERE id = :id")
+    suspend fun setSkipNext(id: Long, skip: Boolean)
 }

@@ -11,24 +11,33 @@ import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.net.Uri
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.speech.tts.TextToSpeech
 import androidx.core.app.NotificationCompat
 import com.splunchy.android.alarmclock.R
 import com.splunchy.android.alarmclock.data.Alarm
 import com.splunchy.android.alarmclock.data.AlarmDatabase
+import com.splunchy.android.alarmclock.data.ObstacleType
 import com.splunchy.android.alarmclock.ui.ringer.RingerActivity
 import com.splunchy.android.alarmclock.util.AlarmScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class AlarmRingService : Service() {
 
     private var mediaPlayer: MediaPlayer? = null
     private var vibrator: Vibrator? = null
+    private var tts: TextToSpeech? = null
+    private val handler = Handler(Looper.getMainLooper())
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -75,24 +84,10 @@ class AlarmRingService : Service() {
     }
 
     private fun startRinging(alarm: Alarm) {
-        val ringtoneUri = if (alarm.ringtoneUri != null) {
-            Uri.parse(alarm.ringtoneUri)
+        if (alarm.usesInternetRadio) {
+            startInternetRadio(alarm.internetRadioUrl!!)
         } else {
-            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-        }
-
-        mediaPlayer = MediaPlayer().apply {
-            setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-            )
-            setDataSource(this@AlarmRingService, ringtoneUri)
-            isLooping = true
-            prepare()
-            start()
+            startLocalRingtone(alarm)
         }
 
         if (alarm.vibrate) {
@@ -102,6 +97,61 @@ class AlarmRingService : Service() {
                 VibrationEffect.createWaveform(longArrayOf(0, 500, 500), 0)
             )
         }
+
+        if (alarm.speakingClock) {
+            handler.postDelayed({ speakTime() }, 2000)
+        }
+    }
+
+    private fun startLocalRingtone(alarm: Alarm) {
+        val ringtoneUri = if (alarm.ringtoneUri != null) {
+            Uri.parse(alarm.ringtoneUri)
+        } else {
+            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+        }
+
+        mediaPlayer = MediaPlayer().apply {
+            setAudioAttributes(alarmAudioAttributes())
+            setDataSource(this@AlarmRingService, ringtoneUri)
+            isLooping = true
+            prepare()
+            start()
+        }
+    }
+
+    private fun startInternetRadio(url: String) {
+        mediaPlayer = MediaPlayer().apply {
+            setAudioAttributes(alarmAudioAttributes())
+            setDataSource(url)
+            isLooping = false
+            setOnPreparedListener { it.start() }
+            setOnErrorListener { _, _, _ ->
+                startLocalRingtone(Alarm(hour = 0, minute = 0))
+                true
+            }
+            prepareAsync()
+        }
+    }
+
+    private fun alarmAudioAttributes() = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_ALARM)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+        .build()
+
+    private fun speakTime() {
+        tts = TextToSpeech(this) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                tts?.language = Locale.getDefault()
+                val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
+                val dayFormat = SimpleDateFormat("EEEE", Locale.getDefault())
+                val now = Date()
+                val text = "It is ${timeFormat.format(now)}, ${dayFormat.format(now)}"
+                tts?.speak(text, TextToSpeech.QUEUE_ADD, null, "speaking_clock")
+
+                handler.postDelayed({ speakTime() }, 30000)
+            }
+        }
     }
 
     private fun launchRingerActivity(alarm: Alarm) {
@@ -110,6 +160,8 @@ class AlarmRingService : Service() {
             putExtra("alarm_id", alarm.id)
             putExtra("alarm_label", alarm.label)
             putExtra("alarm_time", alarm.timeString())
+            putExtra("flip_to_snooze", alarm.flipToSnooze)
+            putExtra("obstacle_type", alarm.obstacleType.name)
         }
         startActivity(intent)
     }
@@ -153,6 +205,10 @@ class AlarmRingService : Service() {
         mediaPlayer = null
         vibrator?.cancel()
         vibrator = null
+        tts?.stop()
+        tts?.shutdown()
+        tts = null
+        handler.removeCallbacksAndMessages(null)
     }
 
     override fun onDestroy() {

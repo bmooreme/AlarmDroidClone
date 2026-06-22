@@ -2,7 +2,6 @@ package com.splunchy.android.alarmclock.ui.alarm
 
 import android.text.format.DateFormat
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,12 +9,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -71,7 +72,8 @@ fun AlarmListScreen(
                         alarm = alarm,
                         onToggle = { viewModel.toggleAlarm(alarm) },
                         onClick = { onEditAlarm(alarm) },
-                        onDelete = { viewModel.deleteAlarm(alarm) }
+                        onDelete = { viewModel.deleteAlarm(alarm) },
+                        onSkipNext = { viewModel.toggleSkipNext(alarm) }
                     )
                 }
             }
@@ -125,11 +127,15 @@ fun AlarmItem(
     alarm: Alarm,
     onToggle: () -> Unit,
     onClick: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onSkipNext: () -> Unit
 ) {
     val containerColor by animateColorAsState(
-        if (alarm.enabled) MaterialTheme.colorScheme.surfaceContainerHigh
-        else MaterialTheme.colorScheme.surfaceContainerLow,
+        when {
+            alarm.skipNext -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+            alarm.enabled -> MaterialTheme.colorScheme.surfaceContainerHigh
+            else -> MaterialTheme.colorScheme.surfaceContainerLow
+        },
         label = "alarmBg"
     )
 
@@ -146,6 +152,7 @@ fun AlarmItem(
                     alarm.timeString(),
                     fontSize = 36.sp,
                     fontWeight = FontWeight.Light,
+                    textDecoration = if (alarm.skipNext) TextDecoration.LineThrough else null,
                     color = if (alarm.enabled) MaterialTheme.colorScheme.onSurface
                     else MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -156,17 +163,46 @@ fun AlarmItem(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Text(
-                    alarm.repeatSummary(),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (alarm.enabled) {
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        alarm.repeatSummary(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (alarm.usesInternetRadio) {
+                        Text("Radio", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.tertiary)
+                    }
+                    if (alarm.speakingClock) {
+                        Text("Speaks", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.tertiary)
+                    }
+                }
+
+                if (alarm.skipNext) {
+                    Text(
+                        "Skipping next occurrence",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                } else if (alarm.enabled) {
                     val timeUntil = timeUntilAlarm(alarm)
                     Text(
                         timeUntil,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            if (alarm.enabled && alarm.isRepeating) {
+                IconButton(onClick = onSkipNext) {
+                    Icon(
+                        Icons.Default.SkipNext,
+                        contentDescription = "Skip next",
+                        tint = if (alarm.skipNext) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }

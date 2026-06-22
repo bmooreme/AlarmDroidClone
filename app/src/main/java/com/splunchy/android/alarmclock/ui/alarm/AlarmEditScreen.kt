@@ -9,10 +9,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.splunchy.android.alarmclock.data.Alarm
-import java.util.Calendar
+import com.splunchy.android.alarmclock.data.ObstacleType
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,6 +33,10 @@ fun AlarmEditScreen(
     var showTimePicker by remember { mutableStateOf(false) }
     var hour by remember { mutableIntStateOf(alarm.hour) }
     var minute by remember { mutableIntStateOf(alarm.minute) }
+    var internetRadioUrl by remember { mutableStateOf(alarm.internetRadioUrl ?: "") }
+    var speakingClock by remember { mutableStateOf(alarm.speakingClock) }
+    var flipToSnooze by remember { mutableStateOf(alarm.flipToSnooze) }
+    var obstacleType by remember { mutableStateOf(alarm.obstacleType) }
 
     Scaffold(
         topBar = {
@@ -52,7 +55,11 @@ fun AlarmEditScreen(
                             snoozeDurationMinutes = snoozeDuration,
                             monday = monday, tuesday = tuesday, wednesday = wednesday,
                             thursday = thursday, friday = friday,
-                            saturday = saturday, sunday = sunday
+                            saturday = saturday, sunday = sunday,
+                            internetRadioUrl = internetRadioUrl.ifBlank { null },
+                            speakingClock = speakingClock,
+                            flipToSnooze = flipToSnooze,
+                            obstacleType = obstacleType,
                         ))
                     }) {
                         Text("Save")
@@ -68,6 +75,7 @@ fun AlarmEditScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Time
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = { showTimePicker = true }
@@ -79,6 +87,7 @@ fun AlarmEditScreen(
                 )
             }
 
+            // Label
             OutlinedTextField(
                 value = label,
                 onValueChange = { label = it },
@@ -87,6 +96,7 @@ fun AlarmEditScreen(
                 singleLine = true
             )
 
+            // Repeat days
             Text("Repeat", style = MaterialTheme.typography.titleMedium)
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -101,28 +111,75 @@ fun AlarmEditScreen(
                 DayChip("S", sunday) { sunday = it }
             }
 
-            Row(
+            HorizontalDivider()
+
+            // Sound section
+            Text("Sound", style = MaterialTheme.typography.titleMedium)
+
+            OutlinedTextField(
+                value = internetRadioUrl,
+                onValueChange = { internetRadioUrl = it },
+                label = { Text("Internet Radio URL (optional)") },
+                placeholder = { Text("https://stream.example.com/radio.mp3") },
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text("Vibrate", modifier = Modifier.padding(top = 12.dp))
-                Switch(checked = vibrate, onCheckedChange = { vibrate = it })
+                singleLine = true,
+                supportingText = { Text("Leave empty to use default alarm tone") }
+            )
+
+            SwitchRow("Speaking Clock", "Announces time and day", speakingClock) {
+                speakingClock = it
             }
 
+            SwitchRow("Vibrate", null, vibrate) { vibrate = it }
+
+            HorizontalDivider()
+
+            // Snooze
+            Text("Snooze", style = MaterialTheme.typography.titleMedium)
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                Text("Snooze (minutes)", modifier = Modifier.padding(top = 12.dp))
-                Row {
-                    listOf(5, 10, 15, 20).forEach { mins ->
-                        FilterChip(
-                            selected = snoozeDuration == mins,
-                            onClick = { snoozeDuration = mins },
-                            label = { Text("$mins") },
-                            modifier = Modifier.padding(horizontal = 2.dp)
-                        )
-                    }
+                listOf(5, 10, 15, 20).forEach { mins ->
+                    FilterChip(
+                        selected = snoozeDuration == mins,
+                        onClick = { snoozeDuration = mins },
+                        label = { Text("${mins}m") }
+                    )
+                }
+            }
+
+            SwitchRow(
+                "Flip to Snooze",
+                "Place phone face down to snooze",
+                flipToSnooze
+            ) { flipToSnooze = it }
+
+            HorizontalDivider()
+
+            // Dismiss obstacle
+            Text("Dismiss Challenge", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Require a challenge to dismiss the alarm",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                ObstacleType.entries.forEach { type ->
+                    FilterChip(
+                        selected = obstacleType == type,
+                        onClick = { obstacleType = type },
+                        label = {
+                            Text(when (type) {
+                                ObstacleType.NONE -> "None"
+                                ObstacleType.MATH -> "Math"
+                                ObstacleType.SHAKE -> "Shake"
+                            })
+                        }
+                    )
                 }
             }
         }
@@ -137,6 +194,26 @@ fun AlarmEditScreen(
                 showTimePicker = false
             }
         )
+    }
+}
+
+@Composable
+fun SwitchRow(title: String, subtitle: String?, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+            Text(title)
+            if (subtitle != null) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 

@@ -45,6 +45,12 @@ class AlarmListViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun toggleSkipNext(alarm: Alarm) {
+        viewModelScope.launch {
+            dao.setSkipNext(alarm.id, !alarm.skipNext)
+        }
+    }
+
     fun updateAlarm(alarm: Alarm) {
         viewModelScope.launch {
             dao.update(alarm)

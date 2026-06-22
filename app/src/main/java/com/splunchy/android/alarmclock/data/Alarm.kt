@@ -3,6 +3,10 @@ package com.splunchy.android.alarmclock.data
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
+enum class ObstacleType {
+    NONE, MATH, SHAKE
+}
+
 @Entity(tableName = "alarms")
 data class Alarm(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -22,6 +26,11 @@ data class Alarm(
     val snoozeDurationMinutes: Int = 10,
     val volume: Int = -1,
     val gradualVolume: Boolean = false,
+    val internetRadioUrl: String? = null,
+    val speakingClock: Boolean = false,
+    val flipToSnooze: Boolean = false,
+    val obstacleType: ObstacleType = ObstacleType.NONE,
+    val skipNext: Boolean = false,
 ) {
     val isRepeating: Boolean
         get() = monday || tuesday || wednesday || thursday || friday || saturday || sunday
@@ -36,6 +45,9 @@ data class Alarm(
             if (saturday) add(java.util.Calendar.SATURDAY)
             if (sunday) add(java.util.Calendar.SUNDAY)
         }
+
+    val usesInternetRadio: Boolean
+        get() = !internetRadioUrl.isNullOrBlank()
 
     fun repeatSummary(): String {
         if (!isRepeating) return "Once"
