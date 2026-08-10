@@ -1,0 +1,49 @@
+/*
+ * Alexa for Shopping Blocker — static hide list.
+ *
+ * Amazon renames and re-classes this panel frequently (it shipped as "Rufus"
+ * before being rebranded "Alexa for Shopping"), so this file is a
+ * best-effort first pass to prevent a flash-of-sidebar before blocker.js
+ * runs its heuristic scan. Don't rely on this file alone — see blocker.js
+ * for the logic that actually keeps up with Amazon's changes.
+ */
+
+#nav-rufus-disco,
+#nav-flyout-rufus,
+#nav-rufus-content,
+#rufus-container,
+#rufus-root,
+#alexa-shopping-root,
+#alexa-shopping-panel,
+#alexa-shopping-container,
+[id^="rufus-"],
+[id*="alexa-shopping"],
+[data-testid*="rufus" i],
+[data-testid*="alexa-shopping" i],
+[aria-label="Open Alexa panel" i],
+[aria-label*="Alexa for Shopping" i],
+[aria-label*="Rufus" i],
+[class*="rufus-panel" i],
+[class*="rufus-dock" i],
+[class*="rufus-container" i],
+iframe[src*="/rufus/" i],
+iframe[src*="alexa-shopping" i],
+iframe[title*="Alexa" i][title*="shop" i] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+/* Amazon reserves layout space for the docked panel via body classes /
+ * CSS custom properties; zero that reserved space back out. */
+body.rufus-docked-left,
+body.rufus-docked-right,
+body.rufus-docked-adjustable,
+body[class*="alexa-shopping-docked" i] {
+  --rufus-docked-panel-width: 0px !important;
+  margin-right: 0 !important;
+  margin-left: 0 !important;
+}
